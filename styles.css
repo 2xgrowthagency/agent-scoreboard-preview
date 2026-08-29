@@ -31,13 +31,16 @@ h1 { margin: 0; max-width: 760px; font-family: Georgia, "Times New Roman", serif
 .quality-pill[data-status="unavailable"] .quality-dot { background: #929893; box-shadow: none; }
 .demo-notice { display: flex; align-items: center; gap: 14px; padding: 13px 16px; border: 1px solid #e6d79a; border-radius: 12px; background: #fff8d9; color: #615525; font-size: 13px; }
 .demo-notice strong { flex: 0 0 auto; }
-.controls { display: flex; align-items: end; gap: 12px; margin: 24px 0; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(252,251,247,.72); }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 24px 0; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(252,251,247,.72); }
 .controls label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 750; }
 .controls select, .controls input { min-height: 38px; border: 1px solid var(--line); border-radius: 9px; background: white; padding: 0 10px; color: var(--ink); font-size: 13px; }
 .period-toggle { display: flex; padding: 3px; border-radius: 10px; background: #e8e4da; }
 .period-button { min-height: 34px; border: 0; border-radius: 8px; background: transparent; padding: 0 15px; cursor: pointer; font-size: 13px; font-weight: 750; }
 .period-button.active { background: var(--ink); color: white; box-shadow: 0 2px 8px rgba(23,35,31,.16); }
 .reset-button { min-height: 38px; margin-left: auto; border: 0; background: transparent; padding: 0 12px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 750; }
+.filter-error { flex-basis: 100%; margin: 0; color: #9f493a; font-size: 12px; font-weight: 700; }
+.filter-error:empty { display: none; }
+.controls input[aria-invalid="true"] { border-color: #c45c4b; box-shadow: 0 0 0 2px rgba(196,92,75,.12); }
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .kpi-card, .chart-card { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 8px 28px rgba(42,49,44,.045); }
 .kpi-card { position: relative; overflow: hidden; padding: 20px; }
@@ -81,6 +84,7 @@ footer p { margin: 0; }
   .demo-notice { align-items: start; flex-direction: column; gap: 5px; }
   .controls { display: grid; grid-template-columns: 1fr 1fr; }
   .period-toggle, .controls label:first-of-type { grid-column: 1 / -1; }
+  .filter-error { grid-column: 1 / -1; }
   .period-button { flex: 1; }
   .controls select, .controls input { width: 100%; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }

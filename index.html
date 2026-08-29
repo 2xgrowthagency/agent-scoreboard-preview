@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Local throughput proxy dashboard for ticket and pull request flow"
+      content="Throughput proxy dashboard for ticket and pull request flow"
     />
-    <title>Agent flow — local preview</title>
+    <title>Agent flow — preview</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -17,7 +18,7 @@
           <span class="brand-mark" aria-hidden="true">A</span>
           <span id="brand-label">Agent flow</span>
         </div>
-        <div class="preview-badge">Local preview</div>
+        <div class="preview-badge">Preview</div>
       </header>
 
       <section class="intro" aria-labelledby="page-title">
@@ -60,6 +61,7 @@
           <input id="end-filter" type="date" />
         </label>
         <button type="button" class="reset-button" id="reset-filters">Reset</button>
+        <p class="filter-error" id="filter-error" role="status" aria-live="polite"></p>
       </section>
 
       <section class="kpi-grid" id="kpi-grid" aria-label="Latest throughput counts"></section>

@@ -5,6 +5,28 @@ const HEADLINE_METRICS = Object.freeze([
   "pull_requests_merged",
 ]);
 
+export function dateRangeError(start, end) {
+  return start && end && start > end
+    ? "From date must be on or before To date."
+    : "";
+}
+
+export function buildChartPath(points, key, x, y) {
+  let drawing = false;
+  return points
+    .map((point, index) => {
+      if (point[key] === null) {
+        drawing = false;
+        return null;
+      }
+      const command = drawing ? "L" : "M";
+      drawing = true;
+      return `${command}${x(index).toFixed(1)},${y(point[key]).toFixed(1)}`;
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
 function comparePeriods(left, right) {
   return left.period_start.localeCompare(right.period_start);
 }
@@ -82,7 +104,7 @@ export function createDashboardView(
   if (!new Set(["daily", "weekly"]).has(period)) {
     throw new RangeError("period must be daily or weekly");
   }
-  if (start && end && start > end) {
+  if (dateRangeError(start, end)) {
     throw new RangeError("start must not be after end");
   }
 

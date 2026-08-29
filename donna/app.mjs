@@ -1,4 +1,4 @@
-import { createDashboardView } from "./data.mjs";
+import { buildChartPath, createDashboardView, dateRangeError } from "./data.mjs";
 
 const METRICS = {
   tickets_created: { label: "Tickets created", accent: "coral" },
@@ -81,10 +81,7 @@ function chartMarkup(primary, secondary, colors, period) {
   const max = Math.max(1, ...values);
   const x = (index) => pad.x + (index * (width - pad.x * 2)) / Math.max(1, points.length - 1);
   const y = (value) => pad.top + ((max - value) * (height - pad.top - pad.bottom)) / max;
-  const path = (key) => points
-    .map((point, index) => point[key] === null ? null : `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(point[key]).toFixed(1)}`)
-    .filter(Boolean)
-    .join(" ");
+  const path = (key) => buildChartPath(points, key, x, y);
   const labels = points.map((point, index) => {
     const show = points.length <= 7 || index === 0 || index === points.length - 1 || index % Math.ceil(points.length / 5) === 0;
     return show ? `<text x="${x(index)}" y="229" text-anchor="middle">${formatDate(point.period_start, period)}</text>` : "";
@@ -113,6 +110,15 @@ function renderDelta(selector, value, positiveLabel, negativeLabel) {
 }
 
 function render() {
+  const rangeError = dateRangeError(state.start, state.end);
+  const filterError = document.querySelector("#filter-error");
+  const startFilter = document.querySelector("#start-filter");
+  const endFilter = document.querySelector("#end-filter");
+  filterError.textContent = rangeError;
+  startFilter.setAttribute("aria-invalid", String(Boolean(rangeError)));
+  endFilter.setAttribute("aria-invalid", String(Boolean(rangeError)));
+  if (rangeError) return;
+
   const view = createDashboardView(snapshot, {
     period: state.period,
     repository: state.repository,
