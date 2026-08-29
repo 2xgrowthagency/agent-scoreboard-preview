@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Local throughput proxy dashboard for ticket and pull request flow"
+    />
+    <title>Agent flow — local preview</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">A</span>
+          <span id="brand-label">Agent flow</span>
+        </div>
+        <div class="preview-badge">Local preview</div>
+      </header>
+
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Delivery pulse</p>
+          <h1 id="page-title">What moved through the system?</h1>
+          <p class="lede">
+            Approximate throughput and delegation signals. Useful for direction,
+            not individual productivity or causal claims.
+          </p>
+        </div>
+        <div class="quality-pill" id="quality-pill" aria-live="polite">
+          <span class="quality-dot"></span>
+          <span id="quality-label">Loading coverage…</span>
+        </div>
+      </section>
+
+      <aside class="demo-notice" id="demo-notice">
+        <strong id="dataset-heading">Loading data…</strong>
+        <span id="dataset-detail">Checking the bounded aggregate snapshot.</span>
+      </aside>
+
+      <section class="controls" aria-label="Dashboard filters">
+        <div class="period-toggle" role="group" aria-label="Aggregation period">
+          <button type="button" class="period-button active" data-period="daily" aria-pressed="true">Daily</button>
+          <button type="button" class="period-button" data-period="weekly" aria-pressed="false">Weekly</button>
+        </div>
+        <label>
+          <span>Repository</span>
+          <select id="repository-filter">
+            <option value="all">All repositories</option>
+          </select>
+        </label>
+        <label>
+          <span>From</span>
+          <input id="start-filter" type="date" />
+        </label>
+        <label>
+          <span>To</span>
+          <input id="end-filter" type="date" />
+        </label>
+        <button type="button" class="reset-button" id="reset-filters">Reset</button>
+      </section>
+
+      <section class="kpi-grid" id="kpi-grid" aria-label="Latest throughput counts"></section>
+
+      <section class="flow-grid">
+        <article class="chart-card">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">Ticket flow</p>
+              <h2>Created vs completed</h2>
+            </div>
+            <div class="delta-chip" id="ticket-delta"></div>
+          </div>
+          <div class="legend" aria-hidden="true">
+            <span><i class="swatch coral"></i>Created</span>
+            <span><i class="swatch ink"></i>Completed</span>
+          </div>
+          <div id="ticket-chart" class="chart"></div>
+        </article>
+
+        <article class="chart-card">
+          <div class="card-heading">
+            <div>
+              <p class="eyebrow">Pull request flow</p>
+              <h2>Opened vs merged</h2>
+            </div>
+            <div class="delta-chip" id="pr-delta"></div>
+          </div>
+          <div class="legend" aria-hidden="true">
+            <span><i class="swatch violet"></i>Opened</span>
+            <span><i class="swatch sage"></i>Merged</span>
+          </div>
+          <div id="pr-chart" class="chart"></div>
+        </article>
+      </section>
+
+      <footer>
+        <p id="coverage-detail">Coverage is calculated from the selected complete periods.</p>
+        <p>Counts are bounded workflow proxies. Missing data is never treated as zero.</p>
+      </footer>
+    </main>
+
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
