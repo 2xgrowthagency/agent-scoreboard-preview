@@ -5,6 +5,27 @@ const HEADLINE_METRICS = Object.freeze([
   "pull_requests_merged",
 ]);
 
+export function defaultDateRange(flowSeries, period = "daily", periods = 7) {
+  if (!Array.isArray(flowSeries)) {
+    throw new TypeError("flowSeries must be an array");
+  }
+  if (!new Set(["daily", "weekly"]).has(period)) {
+    throw new RangeError("period must be daily or weekly");
+  }
+  if (!Number.isInteger(periods) || periods < 1) {
+    throw new RangeError("periods must be a positive integer");
+  }
+  const buckets = [...new Map(
+    flowSeries
+      .filter((fact) => fact.period === period && fact.period_start && fact.period_end)
+      .map((fact) => [`${fact.period_start}|${fact.period_end}`, fact]),
+  ).values()].sort(comparePeriods);
+  const selected = buckets.slice(-periods);
+  return selected.length > 0
+    ? { start: selected[0].period_start, end: selected.at(-1).period_end }
+    : { start: "", end: "" };
+}
+
 export function dateRangeError(start, end) {
   return start && end && start > end
     ? "From date must be on or before To date."

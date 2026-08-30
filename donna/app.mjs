@@ -1,4 +1,9 @@
-import { buildChartPath, createDashboardView, dateRangeError } from "./data.mjs";
+import {
+  buildChartPath,
+  createDashboardView,
+  dateRangeError,
+  defaultDateRange,
+} from "./data.mjs";
 
 const METRICS = {
   tickets_created: { label: "Tickets created", accent: "coral" },
@@ -7,11 +12,13 @@ const METRICS = {
   pull_requests_merged: { label: "PRs merged", accent: "sage" },
 };
 
-const state = { period: "daily", repository: "all", start: "", end: "" };
 const snapshot = await fetch("./data/snapshot.json").then((response) => {
   if (!response.ok) throw new Error(`Snapshot request failed: ${response.status}`);
   return response.json();
 });
+let usingDefaultRange = true;
+const initialRange = defaultDateRange(snapshot.flow_series);
+const state = { period: "daily", repository: "all", ...initialRange };
 
 if (snapshot.operator_key) {
   const operatorName = snapshot.operator_key[0].toUpperCase() + snapshot.operator_key.slice(1);
@@ -29,6 +36,8 @@ if (snapshot.dataset_kind === "synthetic_demo") {
 }
 
 const repositoryFilter = document.querySelector("#repository-filter");
+document.querySelector("#start-filter").value = initialRange.start;
+document.querySelector("#end-filter").value = initialRange.end;
 const allRepositories = [...new Set(snapshot.flow_series.map((fact) => fact.repository_key))].sort();
 for (const repository of allRepositories) {
   repositoryFilter.add(new Option(repository, repository));
@@ -152,6 +161,12 @@ function render() {
 document.querySelectorAll(".period-button").forEach((button) => {
   button.addEventListener("click", () => {
     state.period = button.dataset.period;
+    if (usingDefaultRange) {
+      const range = defaultDateRange(snapshot.flow_series, state.period);
+      Object.assign(state, range);
+      document.querySelector("#start-filter").value = range.start;
+      document.querySelector("#end-filter").value = range.end;
+    }
     document.querySelectorAll(".period-button").forEach((item) => {
       const active = item === button;
       item.classList.toggle("active", active);
@@ -161,18 +176,26 @@ document.querySelectorAll(".period-button").forEach((button) => {
   });
 });
 
-for (const [selector, key] of [["#repository-filter", "repository"], ["#start-filter", "start"], ["#end-filter", "end"]]) {
+repositoryFilter.addEventListener("change", (event) => {
+  state.repository = event.target.value;
+  render();
+});
+
+for (const [selector, key] of [["#start-filter", "start"], ["#end-filter", "end"]]) {
   document.querySelector(selector).addEventListener("change", (event) => {
     state[key] = event.target.value;
+    usingDefaultRange = false;
     render();
   });
 }
 
 document.querySelector("#reset-filters").addEventListener("click", () => {
-  Object.assign(state, { repository: "all", start: "", end: "" });
+  const range = defaultDateRange(snapshot.flow_series, state.period);
+  Object.assign(state, { repository: "all", ...range });
+  usingDefaultRange = true;
   repositoryFilter.value = "all";
-  document.querySelector("#start-filter").value = "";
-  document.querySelector("#end-filter").value = "";
+  document.querySelector("#start-filter").value = range.start;
+  document.querySelector("#end-filter").value = range.end;
   render();
 });
 
