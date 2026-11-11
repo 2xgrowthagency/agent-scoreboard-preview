@@ -95,3 +95,39 @@ footer p { margin: 0; }
   .chart-card { padding: 18px 14px; }
   footer { flex-direction: column; gap: 8px; }
 }
+
+/* Measured-route enhancements leave the approved synthetic design unchanged. */
+[hidden] { display: none !important; }
+.load-notice { margin: 16px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.load-notice button, .freshness button { min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: white; cursor: pointer; white-space: nowrap; }
+.measured .freshness { margin: 14px 0 0; display: flex; align-items: center; gap: 14px; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.measured .freshness p { margin: 0; flex: 1; }
+.measured .freshness[data-status="warning"] { color: #80551c; }
+.measured .date-help { flex-basis: 100%; margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.measured .range-summary { margin: 0 2px 14px; font-size: 13px; line-height: 1.6; font-weight: 650; }
+.measured .kpi-period { font-size: 11px; color: var(--muted); margin-top: 14px; }
+.measured .kpi-value { margin-top: 8px; }
+.measured .kpi-latest { margin-top: 16px; font-size: 12px; line-height: 1.5; }
+.measured .kpi-latest span { display: block; color: var(--muted); font-size: 11px; }
+.measured .kpi-change { margin-top: 6px; }
+.measured .partial-note { margin-top: 8px; color: #80551c; font-size: 11px; line-height: 1.5; }
+.measured .chart svg { overflow: hidden; }
+.measured .chart text { font-size: 12px; fill: #59635d; }
+.measured .chart .axis-unit { font-size: 11px; }
+.measured .chart-values { margin-top: 8px; font-size: 12px; }
+.measured .chart-values summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-weight: 700; }
+.measured .chart-values p { color: var(--muted); line-height: 1.5; }
+.measured .chart-values table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.measured .chart-values caption { text-align: left; padding-bottom: 10px; font-weight: 700; }
+.measured .chart-values th, .measured .chart-values td { padding: 9px 5px; text-align: right; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.measured .chart-values th:first-child { text-align: left; width: 46%; }
+.measured .chart-values tbody th { font-weight: 500; }
+.measured :is(button, select, input, summary):focus-visible, #retry-load:focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .measured .freshness { align-items: start; flex-direction: column; }
+  .measured .controls > * { min-width: 0; }
+  .measured .date-help { grid-column: 1 / -1; }
+  .measured .controls input { min-width: 0; }
+  .measured .controls label { min-width: 0; }
+  .load-notice { align-items: start; flex-direction: column; }
+}

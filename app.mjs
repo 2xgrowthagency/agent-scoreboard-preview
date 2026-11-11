@@ -1,8 +1,6 @@
 import {
-  buildChartPath,
-  createDashboardView,
-  dateRangeError,
-  defaultDateRange,
+  buildChartPath, createDashboardView, dateRangeError, defaultDateRange,
+  loadSnapshot, measuredRangeError, numericScale, rangeTotals, snapshotFreshness,
 } from "./data.mjs";
 
 const METRICS = {
@@ -11,71 +9,115 @@ const METRICS = {
   pull_requests_opened: { label: "PRs opened", accent: "violet" },
   pull_requests_merged: { label: "PRs merged", accent: "sage" },
 };
-
-const snapshot = await fetch("./data/snapshot.json").then((response) => {
-  if (!response.ok) throw new Error(`Snapshot request failed: ${response.status}`);
-  return response.json();
-});
+const $ = selector => document.querySelector(selector);
+let snapshot = null;
 let usingDefaultRange = true;
-const initialRange = defaultDateRange(snapshot.flow_series);
-const state = { period: "daily", repository: "all", ...initialRange };
+let initialized = false;
+let loading = false;
+let measured = location.pathname !== "/" && !location.pathname.endsWith("/index.html");
+const state = { period: "daily", repository: "all", start: "", end: "" };
+const repositoryFilter = $("#repository-filter");
 
-if (snapshot.operator_key) {
-  const operatorName = snapshot.operator_key[0].toUpperCase() + snapshot.operator_key.slice(1);
-  document.querySelector("#brand-label").textContent = `Agent flow — ${operatorName}`;
-  document.title = `${operatorName} agent flow`;
-}
-const datasetHeading = document.querySelector("#dataset-heading");
-const datasetDetail = document.querySelector("#dataset-detail");
-if (snapshot.dataset_kind === "synthetic_demo") {
-  datasetHeading.textContent = "Synthetic demo data";
-  datasetDetail.textContent = "Every value in this preview is fabricated and does not describe production history.";
-} else {
-  datasetHeading.textContent = "Measured private aggregate data";
-  datasetDetail.textContent = "Bounded Workboard and GitHub counts. Directional workflow proxy, not individual productivity.";
-}
-
-const repositoryFilter = document.querySelector("#repository-filter");
-document.querySelector("#start-filter").value = initialRange.start;
-document.querySelector("#end-filter").value = initialRange.end;
-const allRepositories = [...new Set(snapshot.flow_series.map((fact) => fact.repository_key))].sort();
-for (const repository of allRepositories) {
-  repositoryFilter.add(new Option(repository, repository));
-}
+const loadNotice = document.createElement("section");
+loadNotice.id = "load-notice";
+loadNotice.className = "load-notice";
+loadNotice.setAttribute("aria-live", "polite");
+loadNotice.innerHTML = '<span id="load-message">Loading aggregate data…</span><button type="button" id="retry-load" hidden>Retry</button>';
+$("#demo-notice").after(loadNotice);
+$("#retry-load").addEventListener("click", refresh);
 
 function formatDate(value, period) {
-  const date = new Date(`${value}T00:00:00Z`);
   return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    ...(period === "weekly" ? { timeZone: "UTC" } : { weekday: "short", timeZone: "UTC" }),
-  }).format(date);
+    month: "short", day: "numeric", timeZone: "UTC",
+    ...(period === "weekly" ? {} : { weekday: "short" }),
+  }).format(new Date(`${value}T00:00:00Z`));
 }
-
+function periodLabel(start, end) {
+  if (!start || !end) return "No complete periods";
+  return start === end ? start : `${start} to ${end}`;
+}
 function comparisonText(change, period) {
   if (change === null) return "No prior complete period";
   if (change === 0) return `No change vs prior ${period === "daily" ? "day" : "week"}`;
   return `${change > 0 ? "+" : ""}${change} vs prior ${period === "daily" ? "day" : "week"}`;
 }
-
+function installMeasuredControls() {
+  document.body.classList.add("measured");
+  const freshness = document.createElement("section");
+  freshness.id = "freshness";
+  freshness.className = "freshness";
+  freshness.setAttribute("aria-label", "Data freshness");
+  $("#demo-notice").after(freshness);
+  const preset = document.createElement("label");
+  preset.className = "preset-control";
+  preset.innerHTML = '<span>Range</span><select id="range-preset"><option value="7">Latest 7 periods</option><option value="30">Latest 30 periods</option><option value="all">All available</option><option value="custom">Custom dates</option></select>';
+  $("#reset-filters").before(preset);
+  $("#range-preset").addEventListener("change", event => {
+    if (event.target.value === "custom") { $("#start-filter").focus(); return; }
+    const count = event.target.value === "all" ? Number.MAX_SAFE_INTEGER : Number(event.target.value);
+    Object.assign(state, defaultDateRange(snapshot.flow_series, state.period, count));
+    usingDefaultRange = count === 7;
+    syncDates(); render();
+  });
+  const help = document.createElement("p");
+  help.className = "date-help"; help.id = "date-help";
+  help.textContent = "Dates are inclusive, in Pacific time (America/Vancouver). Weekly view includes only whole Monday–Sunday weeks.";
+  $("#filter-error").before(help);
+  for (const selector of ["#start-filter", "#end-filter"]) {
+    $(selector).required = true;
+    $(selector).setAttribute("aria-describedby", "date-help filter-error");
+  }
+  const summary = document.createElement("p");
+  summary.id = "range-summary"; summary.className = "range-summary"; summary.setAttribute("aria-live", "polite");
+  $("#kpi-grid").before(summary);
+  $("#kpi-grid").setAttribute("aria-label", "Selected-range totals and latest period counts");
+}
+function syncDates() {
+  $("#start-filter").value = state.start;
+  $("#end-filter").value = state.end;
+}
+function renderFreshness() {
+  if (!measured || !snapshot) return;
+  const freshness = snapshotFreshness(snapshot);
+  const parts = [];
+  if (freshness.generatedAt) {
+    const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/Vancouver", dateStyle: "medium", timeStyle: "short" }).format(new Date(freshness.generatedAt));
+    parts.push(`Snapshot refreshed ${time} Pacific.`);
+  } else parts.push("Refresh timestamp unavailable.");
+  parts.push(freshness.latest ? `Latest covered day: ${freshness.latest} Pacific.` : "No covered day available.");
+  if (freshness.stale) parts.push("Stale snapshot: the midnight Pacific collection is overdue. Data is kept visible.");
+  if (freshness.metadataMissing) parts.push("Freshness could not be verified.");
+  if (!freshness.sources.length) parts.push("Per-source collection freshness is unavailable.");
+  for (const source of freshness.sources) {
+    if (source.name === "workboard") parts.push(`Legacy Workboard history through ${source.date}; not authoritative Linear coverage.`);
+    else {
+      const collected = source.collectedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "America/Vancouver", dateStyle: "medium", timeStyle: "short" }).format(new Date(source.collectedAt)) + " Pacific" : "unverified time";
+      parts.push(`${source.name === "github" ? "GitHub" : source.name === "linear" ? "Linear" : source.name}: through ${source.date}, collected ${collected}${source.limited ? " (limited freshness or coverage)" : ""}.`);
+    }
+  }
+  const node = $("#freshness"); node.replaceChildren();
+  const text = document.createElement("p"); text.textContent = parts.join(" "); node.append(text);
+  node.dataset.status = freshness.stale || freshness.metadataMissing || !freshness.sources.length || freshness.sources.some(s => !s.legacy && s.limited) ? "warning" : "current";
+  const button = document.createElement("button"); button.type = "button"; button.textContent = "Refresh data"; button.disabled = loading; button.addEventListener("click", refresh); node.append(button);
+}
 function renderKpis(view) {
-  const grid = document.querySelector("#kpi-grid");
-  grid.replaceChildren();
+  const totals = rangeTotals(view);
+  const grid = $("#kpi-grid"); grid.replaceChildren();
   for (const [metricId, config] of Object.entries(METRICS)) {
     const kpi = view.kpis[metricId];
-    const card = document.createElement("article");
-    card.className = `kpi-card ${config.accent}`;
+    const card = document.createElement("article"); card.className = `kpi-card ${config.accent}`;
+    const last = view.series[metricId].at(-1);
     card.innerHTML = `
       <div class="kpi-label"><span class="metric-icon" aria-hidden="true"></span>${config.label}</div>
-      <div class="kpi-value">${kpi.current ?? "—"}</div>
-      <div class="kpi-change ${kpi.change > 0 ? "up" : kpi.change < 0 ? "down" : ""}">
-        ${comparisonText(kpi.change, view.filters.period)}
-      </div>`;
+      ${measured ? '<div class="kpi-period">Selected-range total</div>' : ""}
+      <div class="kpi-value">${(measured ? totals[metricId].value : kpi.current) ?? "—"}</div>
+      ${measured ? `<div class="kpi-latest">Latest ${state.period === "daily" ? "day" : "week"}: <strong>${kpi.current ?? "—"}${last?.value !== null && last?.complete === false ? " (partial)" : ""}</strong><span>${periodLabel(last?.period_start, last?.period_end)}</span></div>` : ""}
+      <div class="kpi-change ${kpi.change > 0 ? "up" : kpi.change < 0 ? "down" : ""}">${comparisonText(kpi.change, view.filters.period)}</div>
+      ${measured && totals[metricId].value === null && totals[metricId].expected ? '<div class="partial-note">Total unavailable: some observations are missing or partial.</div>' : ""}`;
     grid.append(card);
   }
 }
-
-function chartMarkup(primary, secondary, colors, period) {
+function legacyChartMarkup(primary, secondary, colors, period) {
   const points = primary.map((item, index) => ({
     period_start: item.period_start,
     primary: item.value,
@@ -107,96 +149,146 @@ function chartMarkup(primary, secondary, colors, period) {
   </svg>`;
 }
 
-function renderDelta(selector, value, positiveLabel, negativeLabel) {
-  const element = document.querySelector(selector);
-  if (value === null) {
-    element.textContent = "Flow delta unavailable";
-    element.className = "delta-chip neutral";
-    return;
-  }
-  element.textContent = value === 0 ? "Balanced flow" : `${Math.abs(value)} ${value > 0 ? positiveLabel : negativeLabel}`;
-  element.className = `delta-chip ${value > 0 ? "warm" : "cool"}`;
-}
-
-function render() {
-  const rangeError = dateRangeError(state.start, state.end);
-  const filterError = document.querySelector("#filter-error");
-  const startFilter = document.querySelector("#start-filter");
-  const endFilter = document.querySelector("#end-filter");
-  filterError.textContent = rangeError;
-  startFilter.setAttribute("aria-invalid", String(Boolean(rangeError)));
-  endFilter.setAttribute("aria-invalid", String(Boolean(rangeError)));
-  if (rangeError) return;
-
-  const view = createDashboardView(snapshot, {
-    period: state.period,
-    repository: state.repository,
-    start: state.start || undefined,
-    end: state.end || undefined,
-  });
-  renderKpis(view);
-  document.querySelector("#ticket-chart").innerHTML = chartMarkup(
-    view.series.tickets_created,
-    view.series.tickets_completed,
-    ["#ef725e", "#17231f"],
-    state.period,
-  );
-  document.querySelector("#pr-chart").innerHTML = chartMarkup(
-    view.series.pull_requests_opened,
-    view.series.pull_requests_merged,
-    ["#7d63c7", "#4e8e73"],
-    state.period,
-  );
-  renderDelta("#ticket-delta", view.deltas.ticket_backlog_flow, "more created", "more completed");
-  renderDelta("#pr-delta", view.deltas.pull_request_flow, "more opened", "more merged");
-
-  const quality = document.querySelector("#quality-pill");
-  quality.dataset.status = view.coverage.status;
-  document.querySelector("#quality-label").textContent = `${view.coverage.status[0].toUpperCase()}${view.coverage.status.slice(1)} coverage`;
-  document.querySelector("#coverage-detail").textContent = view.coverage.expected_points === 0
-    ? "No complete periods match the current filters."
-    : `${view.coverage.observed_points} of ${view.coverage.expected_points} selected metric points are observed.`;
-}
-
-document.querySelectorAll(".period-button").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.period = button.dataset.period;
-    if (usingDefaultRange) {
-      const range = defaultDateRange(snapshot.flow_series, state.period);
-      Object.assign(state, range);
-      document.querySelector("#start-filter").value = range.start;
-      document.querySelector("#end-filter").value = range.end;
+function measuredChartMarkup(primary, secondary, colors, labels, width) {
+  const buckets = new Map();
+  for (const [key, series] of [["primary", primary], ["secondary", secondary]]) {
+    for (const fact of series) {
+      const id = `${fact.period_start}|${fact.period_end}`;
+      const point = buckets.get(id) ?? { start: fact.period_start, end: fact.period_end, primary: null, secondary: null };
+      point[key] = fact.value; point[`${key}Complete`] = fact.complete !== false; buckets.set(id, point);
     }
-    document.querySelectorAll(".period-button").forEach((item) => {
-      const active = item === button;
-      item.classList.toggle("active", active);
-      item.setAttribute("aria-pressed", String(active));
-    });
-    render();
-  });
-});
-
-repositoryFilter.addEventListener("change", (event) => {
-  state.repository = event.target.value;
-  render();
-});
-
-for (const [selector, key] of [["#start-filter", "start"], ["#end-filter", "end"]]) {
-  document.querySelector(selector).addEventListener("change", (event) => {
-    state[key] = event.target.value;
-    usingDefaultRange = false;
-    render();
-  });
+  }
+  const points = [...buckets.values()].sort((a, b) => a.start.localeCompare(b.start));
+  if (!points.length) return '<div class="empty-state">No complete periods in this range</div>';
+  width = Math.max(240, Math.round(width || 500));
+  const height = 230, left = 42, right = 20, top = 25, bottom = 40;
+  const scale = numericScale(points.flatMap(p => [p.primary, p.secondary]));
+  const x = i => points.length === 1 ? (left + width - right) / 2 : left + i * (width - left - right) / (points.length - 1);
+  const y = n => top + (scale.max - n) * (height - top - bottom) / scale.max;
+  const ticks = scale.ticks.map(n => `<line class="gridline" x1="${left}" x2="${width - right}" y1="${y(n)}" y2="${y(n)}"/><text class="y-tick" x="${left - 9}" y="${y(n) + 4}" text-anchor="end">${n}</text>`).join("");
+  const maxLabels = width < 400 ? 3 : 5;
+  const tickIndices = new Set(Array.from({ length: Math.min(maxLabels, points.length) }, (_, i) => Math.round(i * (points.length - 1) / Math.max(1, Math.min(maxLabels, points.length) - 1))));
+  const dates = [...tickIndices].map(i => `<text x="${x(i)}" y="${height - 12}" text-anchor="${points.length === 1 ? "middle" : i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${formatDate(points[i].start, "weekly")}</text>`).join("");
+  const paths = ["primary", "secondary"].map((key, n) => `<path d="${buildChartPath(points, key, x, y)}" fill="none" stroke="${colors[n]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${points.map((p, i) => p[key] === null ? "" : `<circle cx="${x(i)}" cy="${y(p[key])}" r="3.5" fill="${colors[n]}"><title>${labels[n]} · ${periodLabel(p.start, p.end)}: ${p[key]}</title></circle>`).join("")}`).join("");
+  const exactValue = (p, key) => p[key] === null ? "Unavailable" : `${p[key]}${p[`${key}Complete`] ? "" : " (partial)"}`;
+  const rows = points.map(p => `<tr><th scope="row">${periodLabel(p.start, p.end)}</th><td>${exactValue(p, "primary")}</td><td>${exactValue(p, "secondary")}</td></tr>`).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${labels.join(" and ")}: trend chart across ${points.length} complete periods. Exact values are available below."><text class="axis-unit" x="${left}" y="13">Count</text>${ticks}${paths}${dates}</svg>
+    <details class="chart-values"><summary>Inspect exact values</summary><p>Pacific dates. Unavailable means missing, not zero. Partial counts may be lower bounds.</p><table><caption>${labels.join(" and ")} by ${state.period === "daily" ? "day" : "week"}</caption><thead><tr><th scope="col">Period</th><th scope="col">${labels[0]}</th><th scope="col">${labels[1]}</th></tr></thead><tbody>${rows}</tbody></table></details>`;
+}
+function renderDelta(selector, value, positiveLabel, negativeLabel) {
+  const element = $(selector);
+  element.textContent = value === null ? "Flow delta unavailable" : value === 0 ? "Balanced flow" : `${Math.abs(value)} ${value > 0 ? positiveLabel : negativeLabel}`;
+  element.className = `delta-chip ${value === null ? "neutral" : value > 0 ? "warm" : "cool"}`;
+  if (measured) element.title = "Selected-range flow difference";
+}
+function clearInvalidResults(message) {
+  $("#kpi-grid").replaceChildren();
+  for (const selector of ["#ticket-chart", "#pr-chart"]) $(selector).innerHTML = '<div class="empty-state">Choose a valid date range to view results.</div>';
+  for (const selector of ["#ticket-delta", "#pr-delta"]) renderDelta(selector, null);
+  $("#quality-pill").dataset.status = "unavailable";
+  $("#quality-label").textContent = "Invalid date range";
+  $("#coverage-detail").textContent = "Results are hidden until the date range is valid.";
+  $("#range-summary").textContent = message;
+}
+function render() {
+  if (!snapshot) return;
+  const bounds = defaultDateRange(snapshot.flow_series, "daily", Number.MAX_SAFE_INTEGER);
+  const rangeError = measured && bounds.start ? measuredRangeError(state.start, state.end, bounds) : dateRangeError(state.start, state.end);
+  $("#filter-error").textContent = rangeError;
+  for (const selector of ["#start-filter", "#end-filter"]) $(selector).setAttribute("aria-invalid", String(Boolean(rangeError)));
+  if (rangeError) { if (measured) clearInvalidResults(rangeError); return; }
+  const view = createDashboardView(snapshot, { ...state, start: state.start || undefined, end: state.end || undefined });
+  renderKpis(view);
+  const chartConfigs = [
+    ["#ticket-chart", "tickets_created", "tickets_completed", ["#ef725e", "#17231f"], ["Created", "Completed"]],
+    ["#pr-chart", "pull_requests_opened", "pull_requests_merged", ["#7d63c7", "#4e8e73"], ["Opened", "Merged"]],
+  ];
+  for (const [selector, first, second, colors, labels] of chartConfigs) {
+    const container = $(selector), expanded = container.querySelector("details")?.open;
+    container.innerHTML = measured
+      ? measuredChartMarkup(view.series[first], view.series[second], colors, labels, container.clientWidth)
+      : legacyChartMarkup(view.series[first], view.series[second], colors, state.period);
+    if (expanded && container.querySelector("details")) container.querySelector("details").open = true;
+  }
+  const totals = rangeTotals(view);
+  const difference = (a, b) => totals[a].value === null || totals[b].value === null ? null : totals[a].value - totals[b].value;
+  renderDelta("#ticket-delta", measured ? difference("tickets_created", "tickets_completed") : view.deltas.ticket_backlog_flow, "more created", "more completed");
+  renderDelta("#pr-delta", measured ? difference("pull_requests_opened", "pull_requests_merged") : view.deltas.pull_request_flow, "more opened", "more merged");
+  $("#quality-pill").dataset.status = view.coverage.status;
+  $("#quality-label").textContent = `${view.coverage.status[0].toUpperCase()}${view.coverage.status.slice(1)} coverage`;
+  $("#coverage-detail").textContent = view.coverage.expected_points === 0 ? "No complete periods match the current filters." : `${view.coverage.observed_points} of ${view.coverage.expected_points} selected metric points are observed.${view.coverage.partial_points ? " Some observed counts have partial source coverage; totals are unavailable." : ""}`;
+  if (measured) {
+    const periods = Object.values(view.series).flat().sort((a, b) => a.period_start.localeCompare(b.period_start));
+    const actual = periods.length ? periodLabel(periods[0].period_start, periods.at(-1).period_end) : "No complete periods";
+    $("#range-summary").textContent = `Selected range: ${periodLabel(state.start, state.end)} Pacific · Totals cover ${actual}${state.period === "weekly" ? " (whole weeks only)" : ""}.`;
+  }
 }
 
-document.querySelector("#reset-filters").addEventListener("click", () => {
-  const range = defaultDateRange(snapshot.flow_series, state.period);
-  Object.assign(state, { repository: "all", ...range });
-  usingDefaultRange = true;
-  repositoryFilter.value = "all";
-  document.querySelector("#start-filter").value = range.start;
-  document.querySelector("#end-filter").value = range.end;
+async function refresh() {
+  if (loading) return;
+  loading = true; loadNotice.hidden = false; $("#retry-load").hidden = true;
+  $("#load-message").textContent = snapshot ? "Refreshing… Previous data remains visible." : "Loading aggregate data…";
+  if (!snapshot) document.querySelectorAll(".controls button, .controls input, .controls select").forEach(e => e.disabled = true);
+  renderFreshness();
+  try {
+    const next = await loadSnapshot();
+    snapshot = next;
+    if (!initialized) {
+      measured = snapshot.dataset_kind !== "synthetic_demo";
+      if (measured) installMeasuredControls();
+      Object.assign(state, defaultDateRange(snapshot.flow_series));
+      initialized = true;
+    }
+    if (snapshot.operator_key) {
+      const name = snapshot.operator_key[0].toUpperCase() + snapshot.operator_key.slice(1);
+      $("#brand-label").textContent = `Agent flow — ${name}`; document.title = `${name} agent flow`;
+    }
+    $("#dataset-heading").textContent = measured ? "Measured private aggregate data" : "Synthetic demo data";
+    $("#dataset-detail").textContent = measured ? "Bounded ticket and GitHub counts. Directional workflow proxy, not individual productivity." : "Every value in this preview is fabricated and does not describe production history.";
+    repositoryFilter.replaceChildren(new Option("All repositories", "all"));
+    for (const repo of [...new Set(snapshot.flow_series.map(f => f.repository_key))].sort()) repositoryFilter.add(new Option(repo, repo));
+    repositoryFilter.value = state.repository;
+    if (!repositoryFilter.value) { state.repository = "all"; repositoryFilter.value = "all"; }
+    if (usingDefaultRange) Object.assign(state, defaultDateRange(snapshot.flow_series, state.period));
+    syncDates();
+    if (measured) {
+      const bounds = defaultDateRange(snapshot.flow_series, "daily", Number.MAX_SAFE_INTEGER);
+      for (const selector of ["#start-filter", "#end-filter"]) { $(selector).min = bounds.start; $(selector).max = bounds.end; }
+    }
+    loadNotice.hidden = true; render();
+  } catch {
+    $("#load-message").textContent = snapshot ? "Refresh failed. Previous data remains visible and may be out of date. Retry to check for updates." : "Data could not be loaded. Check your connection and retry. No counts are available.";
+    $("#retry-load").hidden = false;
+    if (!snapshot) { $("#quality-label").textContent = "Data unavailable"; $("#quality-pill").dataset.status = "unavailable"; $("#dataset-heading").textContent = "Data unavailable"; $("#dataset-detail").textContent = "The aggregate request failed or timed out."; }
+  } finally {
+    loading = false;
+    if (snapshot) document.querySelectorAll(".controls button, .controls input, .controls select").forEach(e => e.disabled = false);
+    renderFreshness();
+  }
+}
+
+document.querySelectorAll(".period-button").forEach(button => button.addEventListener("click", () => {
+  state.period = button.dataset.period;
+  if (usingDefaultRange) { Object.assign(state, defaultDateRange(snapshot.flow_series, state.period)); syncDates(); }
+  document.querySelectorAll(".period-button").forEach(item => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
+  if (measured) { $("#range-preset").value = usingDefaultRange ? "7" : "custom"; updatePresetLabels(); }
+  render();
+}));
+function updatePresetLabels() {
+  if (!measured || !$("#range-preset")) return;
+  for (const count of [7, 30]) $("#range-preset").querySelector(`[value="${count}"]`).textContent = `Latest ${count} ${state.period === "daily" ? "days" : "weeks"}`;
+}
+repositoryFilter.addEventListener("change", event => { state.repository = event.target.value; render(); });
+for (const [selector, key] of [["#start-filter", "start"], ["#end-filter", "end"]]) {
+  $(selector).addEventListener("change", event => { state[key] = event.target.value; usingDefaultRange = false; if (measured) $("#range-preset").value = "custom"; render(); });
+}
+$("#reset-filters").addEventListener("click", () => {
+  Object.assign(state, { repository: "all", ...defaultDateRange(snapshot.flow_series, state.period) });
+  usingDefaultRange = true; repositoryFilter.value = "all"; syncDates();
+  if (measured) $("#range-preset").value = "7";
   render();
 });
-
-render();
+let resizeTimer;
+window.addEventListener("resize", () => { if (measured && snapshot) { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 100); } });
+await refresh();
+updatePresetLabels();
