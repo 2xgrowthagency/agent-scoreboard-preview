@@ -1,5 +1,5 @@
 {
-  "source_commit": "a25c686687f98f03b382ec4557c9d39d8c0ebc91",
+  "source_commit": "445fb0efbe7f8c6498b816feb76a193adb5e9446",
   "snapshot_id": "sha256:54386978e5d53e123a56f7676fe6bd3a0828846c2e9916275fb6c46732e38caa",
   "generated_at": "2026-11-11T21:35:46.607Z",
   "covered_through": "2026-11-10"

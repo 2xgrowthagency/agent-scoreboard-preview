@@ -1,7 +1,7 @@
 import {
   buildChartPath, createDashboardView, dateRangeError, defaultDateRange,
   loadSnapshot, measuredRangeError, numericScale, rangeTotals, snapshotFreshness,
-} from "./data.mjs";
+} from "./data.mjs?v=426253751df1fbb1";
 
 const METRICS = {
   tickets_created: { label: "Tickets created", accent: "coral" },
